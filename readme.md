@@ -12,14 +12,21 @@ go mod download
 go test ./...
 ```
 
+Run with example config:
+```bash
+go run ./cmd/server --config config.example.yaml
+go run ./cmd/client --config config.example.yaml
+```
+
 ## Project Structure
 - `cmd/server` and `cmd/client` - CLI entrypoints
 - `internal/auth` - Authentication helpers (bcrypt scaffolding)
-- `internal/config` - Config structures and YAML loader
-- `internal/logger` - Structured logging with logrus
+- `internal/config` - Config structures, YAML loader, CLI overrides, validation
+- `internal/logger` - Structured logging with level/format and optional file output
 - `internal/tunnel` - Server/client placeholders
 - `pkg/protocol` - Protocol message definitions
 - `docs/` - Requirements and development notes
+- `config.example.yaml` - Sample configuration
 
 ## Documentation
 - Requirements: `docs/requirements.md`
@@ -27,4 +34,4 @@ go test ./...
 - Sprint plan: `sprints.md`
 
 ## Next Steps
-- Implement Sprint 1: configuration loading/validation and logging foundations.
+- Implement Sprint 2: protocol/authentication handshakes and tests.

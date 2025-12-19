@@ -12,6 +12,12 @@ go mod download
 go test ./...
 ```
 
+## Running with the sample config
+```bash
+go run ./cmd/server --config config.example.yaml
+go run ./cmd/client --config config.example.yaml
+```
+
 ## Project Layout
 - `cmd/` - CLI entrypoints for server and client
 - `internal/` - Application packages (auth, config, logger, tunnel)

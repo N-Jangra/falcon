@@ -1,0 +1,25 @@
+server:
+  listen_addr: ":8080"
+  ftp_server_addr: "ftp.internal:21"
+  max_connections: 100
+  timeout: 30s
+
+client:
+  tunnel_addr: "tunnel.internal:8080"
+  local_ftp_port: 2121
+  timeout: 30s
+
+auth:
+  enabled: true
+  # bcrypt hash for the password "changeme" (replace in real deployments)
+  password_hash: "$2a$10$35gTFVbFZtGRwBwvLKMJhey7R0w/djLumpCSEKTZv07sTsKEGmmuy"
+
+tls:
+  enabled: false
+  cert_file: "cert.pem"
+  key_file: "key.pem"
+
+log:
+  level: "info"
+  format: "text"
+  file_path: ""
