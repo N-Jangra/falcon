@@ -1,0 +1,19 @@
+# Binaries and build artifacts
+/bin/
+/build/
+/dist/
+*.exe
+*.exe~
+*.out
+
+# Go tooling
+/coverage/
+*.test
+
+# Dependencies
+/vendor/
+
+# Editors and OS files
+.DS_Store
+.idea/
+.vscode/
