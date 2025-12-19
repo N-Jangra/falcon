@@ -8,6 +8,7 @@ client:
   tunnel_addr: "tunnel.internal:8080"
   local_ftp_port: 2121
   timeout: 30s
+  password: "changeme" # plaintext password the client sends when auth is enabled
 
 auth:
   enabled: true

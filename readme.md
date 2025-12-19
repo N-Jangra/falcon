@@ -18,14 +18,14 @@ go run ./cmd/server --config config.example.yaml
 go run ./cmd/client --config config.example.yaml
 ```
 
-The server now accepts TCP connections, performs an auth handshake, and proxies bytes to the configured FTP server.
+The server accepts TCP connections, performs an auth handshake, and proxies bytes to the configured FTP server. The client listens on a local FTP port and forwards traffic through the tunnel to the server.
 
 ## Project Structure
 - `cmd/server` and `cmd/client` - CLI entrypoints
 - `internal/auth` - Authentication helpers (bcrypt scaffolding)
 - `internal/config` - Config structures, YAML loader, CLI overrides, validation
 - `internal/logger` - Structured logging with level/format and optional file output
-- `internal/tunnel` - Server/client placeholders
+- `internal/tunnel` - Server and client implementations with proxy logic
 - `pkg/protocol` - Protocol message definitions, encoding/decoding, framing
 - `docs/` - Requirements and development notes
 - `config.example.yaml` - Sample configuration
@@ -37,4 +37,4 @@ The server now accepts TCP connections, performs an auth handshake, and proxies 
 - Sprint plan: `sprints.md`
 
 ## Next Steps
-- Implement Sprint 4: basic tunnel client and local FTP listener for end-to-end flow.
+- Implement Sprint 5: add TLS to secure tunnel connections.

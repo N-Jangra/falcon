@@ -31,6 +31,7 @@ type ClientConfig struct {
 	TunnelAddr   string        `yaml:"tunnel_addr"`
 	LocalFTPPort int           `yaml:"local_ftp_port"`
 	Timeout      time.Duration `yaml:"timeout"`
+	Password     string        `yaml:"password"` // plaintext password to send when auth is enabled
 }
 
 type AuthConfig struct {
@@ -129,6 +130,7 @@ var (
 	ErrMissingFTPServerAddr    = errors.New("server.ftp_server_addr is required")
 	ErrMissingTunnelAddr       = errors.New("client.tunnel_addr is required")
 	ErrMissingLocalFTPPort     = errors.New("client.local_ftp_port must be > 0")
+	ErrMissingClientPassword   = errors.New("client.password is required when auth is enabled")
 	ErrMissingPasswordHash     = errors.New("auth.password_hash is required when auth is enabled")
 	ErrMissingTLSCert          = errors.New("tls.cert_file is required when TLS is enabled")
 	ErrMissingTLSKey           = errors.New("tls.key_file is required when TLS is enabled")
@@ -162,6 +164,9 @@ func Validate(cfg *Config) error {
 	if cfg.Auth.Enabled && cfg.Auth.PasswordHash == "" {
 		return ErrMissingPasswordHash
 	}
+	if cfg.Auth.Enabled && cfg.Client.Password == "" {
+		return ErrMissingClientPassword
+	}
 	if cfg.TLS.Enabled {
 		if cfg.TLS.CertFile == "" {
 			return ErrMissingTLSCert
@@ -183,6 +188,7 @@ type Overrides struct {
 	TunnelAddr     *string
 	LocalFTPPort   *int
 	ClientTimeout  *time.Duration
+	ClientPassword *string
 	AuthEnabled    *bool
 	Password       *string
 	PasswordHash   *string
@@ -216,6 +222,9 @@ func ApplyOverrides(cfg *Config, o Overrides) error {
 	}
 	if o.ClientTimeout != nil {
 		cfg.Client.Timeout = *o.ClientTimeout
+	}
+	if o.ClientPassword != nil {
+		cfg.Client.Password = *o.ClientPassword
 	}
 	if o.AuthEnabled != nil {
 		cfg.Auth.Enabled = *o.AuthEnabled
@@ -330,9 +339,10 @@ type CLIFlags struct {
 	MaxConnections intFlag
 	ServerTimeout  durationFlag
 
-	TunnelAddr    stringFlag
-	LocalFTPPort  intFlag
-	ClientTimeout durationFlag
+	TunnelAddr     stringFlag
+	LocalFTPPort   intFlag
+	ClientTimeout  durationFlag
+	ClientPassword stringFlag
 
 	AuthEnabled  boolFlag
 	Password     stringFlag
@@ -361,6 +371,7 @@ func RegisterFlags(fs *flag.FlagSet) *CLIFlags {
 	fs.Var(&flags.TunnelAddr, "server", "Tunnel server address (host:port)")
 	fs.Var(&flags.LocalFTPPort, "local-port", "Local FTP port to listen on")
 	fs.Var(&flags.ClientTimeout, "client-timeout", "Client timeout (e.g. 30s)")
+	fs.Var(&flags.ClientPassword, "client-password", "Plaintext password for client authentication")
 
 	fs.Var(&flags.AuthEnabled, "auth", "Enable authentication (true/false)")
 	fs.Var(&flags.Password, "password", "Plaintext password (hashed internally)")
@@ -404,6 +415,9 @@ func OverridesFromFlags(f *CLIFlags) Overrides {
 	}
 	if f.ClientTimeout.set {
 		ov.ClientTimeout = &f.ClientTimeout.value
+	}
+	if f.ClientPassword.set {
+		ov.ClientPassword = &f.ClientPassword.value
 	}
 	if f.AuthEnabled.set {
 		ov.AuthEnabled = &f.AuthEnabled.value

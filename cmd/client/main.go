@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"log"
+	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/njangra/falcon-tunnel/internal/config"
 	"github.com/njangra/falcon-tunnel/internal/logger"
+	"github.com/njangra/falcon-tunnel/internal/tunnel"
 )
 
 func main() {
@@ -41,5 +47,18 @@ func main() {
 		"tls":    cfg.TLS.Enabled,
 	}).Info("client configuration loaded")
 
-	// TODO: implement client start in later sprints.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	client := tunnel.NewClient(*cfg, l)
+
+	// Close local listener when context cancels by connecting to it to unblock accept if needed.
+	go func() {
+		<-ctx.Done()
+		_, _ = net.Dial("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", cfg.Client.LocalFTPPort)))
+	}()
+
+	if err := client.Start(ctx); err != nil {
+		log.Fatalf("client error: %v", err)
+	}
 }

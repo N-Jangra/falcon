@@ -15,6 +15,7 @@ server:
 client:
   tunnel_addr: "server.internal:8080"
   local_ftp_port: 2021
+  password: "secret"
 auth:
   enabled: true
   password_hash: "$2a$10$abcdefghijklmnopqrstuv"
@@ -45,6 +46,7 @@ func TestApplyOverridesHashesPassword(t *testing.T) {
 	cfg := Default()
 	cfg.Server.FTPServerAddr = "ftp.internal:21"
 	cfg.Client.TunnelAddr = "server:8080"
+	cfg.Client.Password = "pw"
 
 	overridePassword := "supersecret"
 	overrides := Overrides{
@@ -52,6 +54,7 @@ func TestApplyOverridesHashesPassword(t *testing.T) {
 		MaxConnections: intPtr(50),
 		AuthEnabled:    boolPtr(true),
 		FTPServerAddr:  strPtr("ftp.override:21"),
+		ClientPassword: strPtr("clientpass"),
 	}
 
 	if err := ApplyOverrides(&cfg, overrides); err != nil {
@@ -65,6 +68,9 @@ func TestApplyOverridesHashesPassword(t *testing.T) {
 	}
 	if cfg.Auth.PasswordHash == "" {
 		t.Fatalf("expected password hash to be set")
+	}
+	if cfg.Client.Password != "clientpass" {
+		t.Fatalf("expected client password override applied")
 	}
 	if err := Validate(&cfg); err != nil {
 		t.Fatalf("validate after overrides: %v", err)
@@ -89,6 +95,10 @@ func TestValidateFailures(t *testing.T) {
 	if err := Validate(&cfg); err != ErrMissingPasswordHash {
 		t.Fatalf("expected missing password hash error, got %v", err)
 	}
+	cfg.Auth.PasswordHash = "hash"
+	if err := Validate(&cfg); err != ErrMissingClientPassword {
+		t.Fatalf("expected missing client password error, got %v", err)
+	}
 }
 
 func TestBuildWithFileAndOverrides(t *testing.T) {
@@ -102,6 +112,7 @@ server:
 client:
   tunnel_addr: "server.sample:8080"
   local_ftp_port: 2021
+  password: "pw"
 auth:
   enabled: false
 `
@@ -130,6 +141,7 @@ func TestCLIFlagOverrides(t *testing.T) {
 		"--ftp", "ftp.flag:21",
 		"--server", "srv:8080",
 		"--local-port", "2022",
+		"--client-password", "clientpw",
 		"--auth=true",
 		"--password", "mypassword",
 		"--log-level", "error",

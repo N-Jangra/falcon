@@ -112,19 +112,19 @@ Sprint 2
 **Goal:** Minimal viable tunnel client
 
 ### Tasks:
-- [ ] Implement TCP client (`internal/tunnel/client.go`)
+- [x] Implement TCP client (`internal/tunnel/client.go`)
   - Connect to tunnel server
   - Perform authentication
   - Handle authentication failures
-- [ ] Implement local FTP listener
+- [x] Implement local FTP listener
   - Accept local connections
   - Forward to tunnel
-- [ ] Create bidirectional proxy
+- [x] Create bidirectional proxy
   - Data forwarding
   - Connection management
-- [ ] Build client executable (`cmd/client/main.go`)
-- [ ] Write integration tests
-- [ ] Test end-to-end flow
+- [x] Build client executable (`cmd/client/main.go`)
+- [x] Write integration tests
+- [x] Test end-to-end flow
 
 ### Deliverables:
 - Working tunnel client (no TLS yet)
