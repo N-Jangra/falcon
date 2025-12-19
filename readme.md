@@ -24,14 +24,15 @@ go run ./cmd/client --config config.example.yaml
 - `internal/config` - Config structures, YAML loader, CLI overrides, validation
 - `internal/logger` - Structured logging with level/format and optional file output
 - `internal/tunnel` - Server/client placeholders
-- `pkg/protocol` - Protocol message definitions
+- `pkg/protocol` - Protocol message definitions, encoding/decoding, framing
 - `docs/` - Requirements and development notes
 - `config.example.yaml` - Sample configuration
 
 ## Documentation
 - Requirements: `docs/requirements.md`
 - Development setup: `docs/development.md`
+- Protocol: `docs/protocol.md`
 - Sprint plan: `sprints.md`
 
 ## Next Steps
-- Implement Sprint 2: protocol/authentication handshakes and tests.
+- Implement Sprint 3: tunnel server skeleton with authentication hook and proxying.

@@ -56,17 +56,17 @@ Sprint 0
 **Goal:** Define communication protocol and security
 
 ### Tasks:
-- [ ] Design and implement custom protocol (`pkg/protocol/`)
+- [x] Design and implement custom protocol (`pkg/protocol/`)
   - Message types definition
   - Serialization/deserialization
   - Message framing (length prefix)
-- [ ] Implement authentication module (`internal/auth/`)
+- [x] Implement authentication module (`internal/auth/`)
   - Bcrypt password hashing
   - Authentication handshake
   - Session token generation (optional)
-- [ ] Write protocol encoder/decoder tests
-- [ ] Write authentication tests
-- [ ] Document protocol specification
+- [x] Write protocol encoder/decoder tests
+- [x] Write authentication tests
+- [x] Document protocol specification
 
 ### Deliverables:
 - Protocol package with message handling

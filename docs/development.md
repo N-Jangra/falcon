@@ -23,6 +23,7 @@ go run ./cmd/client --config config.example.yaml
 - `internal/` - Application packages (auth, config, logger, tunnel)
 - `pkg/` - Shared protocol definitions
 - `docs/` - Requirements, design, and operational docs
+- `docs/protocol.md` - Message framing and auth handshake reference
 
 ## Coding Standards
 - `gofmt` before committing (already configured via Go toolchain).
