@@ -18,6 +18,8 @@ go run ./cmd/server --config config.example.yaml
 go run ./cmd/client --config config.example.yaml
 ```
 
+The server now accepts TCP connections, performs an auth handshake, and proxies bytes to the configured FTP server.
+
 ## Project Structure
 - `cmd/server` and `cmd/client` - CLI entrypoints
 - `internal/auth` - Authentication helpers (bcrypt scaffolding)
@@ -35,4 +37,4 @@ go run ./cmd/client --config config.example.yaml
 - Sprint plan: `sprints.md`
 
 ## Next Steps
-- Implement Sprint 3: tunnel server skeleton with authentication hook and proxying.
+- Implement Sprint 4: basic tunnel client and local FTP listener for end-to-end flow.

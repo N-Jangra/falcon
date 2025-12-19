@@ -83,19 +83,19 @@ Sprint 1
 **Goal:** Minimal viable tunnel server
 
 ### Tasks:
-- [ ] Implement basic TCP server (`internal/tunnel/server.go`)
+- [x] Implement basic TCP server (`internal/tunnel/server.go`)
   - Accept connections
   - Authentication handshake
   - Connection registry
-- [ ] Implement FTP connection logic
+- [x] Implement FTP connection logic
   - Connect to local FTP server
   - Basic error handling
-- [ ] Create simple data proxying
+- [x] Create simple data proxying
   - Bidirectional copy
   - Connection cleanup
-- [ ] Build server executable (`cmd/server/main.go`)
-- [ ] Write integration tests
-- [ ] Add graceful shutdown
+- [x] Build server executable (`cmd/server/main.go`)
+- [x] Write integration tests
+- [x] Add graceful shutdown
 
 ### Deliverables:
 - Working tunnel server (no TLS yet)

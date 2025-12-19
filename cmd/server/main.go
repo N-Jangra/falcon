@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
+	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/njangra/falcon-tunnel/internal/config"
 	"github.com/njangra/falcon-tunnel/internal/logger"
+	"github.com/njangra/falcon-tunnel/internal/tunnel"
 )
 
 func main() {
@@ -41,5 +46,25 @@ func main() {
 		"tls":    cfg.TLS.Enabled,
 	}).Info("server configuration loaded")
 
-	// TODO: implement server start in later sprints.
+	ln, err := net.Listen("tcp", cfg.Server.ListenAddr)
+	if err != nil {
+		log.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	l.Infof("listening on %s", ln.Addr())
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	server := tunnel.NewServer(*cfg, nil, l)
+
+	go func() {
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
+
+	if err := server.Serve(ctx, ln); err != nil {
+		log.Fatalf("server error: %v", err)
+	}
 }
