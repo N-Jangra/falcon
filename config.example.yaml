@@ -19,6 +19,10 @@ tls:
   enabled: false
   cert_file: "cert.pem"
   key_file: "key.pem"
+  ca_file: "cert.pem" # used by client to verify when self-signed
+  server_name: "localhost"
+  insecure_skip_verify: false
+  cert_fingerprint: "" # optional SHA-256 hex (no colons) to pin server cert
 
 log:
   level: "info"

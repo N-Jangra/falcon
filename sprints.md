@@ -141,19 +141,19 @@ Sprint 3
 **Goal:** Secure the tunnel with encryption
 
 ### Tasks:
-- [ ] Implement TLS configuration (`internal/config/tls.go`)
+- [x] Implement TLS configuration (`internal/config/tls.go`)
   - Certificate loading
   - Self-signed cert generation
   - TLS config builder
-- [ ] Add TLS to server
+- [x] Add TLS to server
   - TLS listener
   - Certificate management
-- [ ] Add TLS to client
+- [x] Add TLS to client
   - TLS dialer
   - Certificate verification
   - Optional cert pinning
-- [ ] Update tests for TLS
-- [ ] Create certificate generation tool
+- [x] Update tests for TLS
+- [x] Create certificate generation tool
 
 ### Deliverables:
 - TLS-encrypted tunnel

@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -17,18 +18,20 @@ import (
 type Client struct {
 	cfg     config.Config
 	logger  *logrus.Logger
+	tlsCfg  *tls.Config
 	mu      sync.Mutex
 	running bool
 }
 
 // NewClient constructs a Client with defaults.
-func NewClient(cfg config.Config, logger *logrus.Logger) *Client {
+func NewClient(cfg config.Config, logger *logrus.Logger, tlsCfg *tls.Config) *Client {
 	if logger == nil {
 		logger = logrus.New()
 	}
 	return &Client{
 		cfg:    cfg,
 		logger: logger,
+		tlsCfg: tlsCfg,
 	}
 }
 
@@ -85,7 +88,19 @@ func (c *Client) handleLocalConn(ctx context.Context, localConn net.Conn) error 
 	if dialTimeout == 0 {
 		dialTimeout = 30 * time.Second
 	}
-	tunnelConn, err := net.DialTimeout("tcp", c.cfg.Client.TunnelAddr, dialTimeout)
+	dialer := &net.Dialer{Timeout: dialTimeout}
+
+	var tunnelConn net.Conn
+	var err error
+	if c.tlsCfg != nil {
+		tlsDialer := tls.Dialer{
+			NetDialer: dialer,
+			Config:    c.tlsCfg,
+		}
+		tunnelConn, err = tlsDialer.DialContext(ctx, "tcp", c.cfg.Client.TunnelAddr)
+	} else {
+		tunnelConn, err = dialer.DialContext(ctx, "tcp", c.cfg.Client.TunnelAddr)
+	}
 	if err != nil {
 		return fmt.Errorf("dial tunnel server: %w", err)
 	}

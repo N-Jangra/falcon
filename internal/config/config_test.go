@@ -95,10 +95,6 @@ func TestValidateFailures(t *testing.T) {
 	if err := Validate(&cfg); err != ErrMissingPasswordHash {
 		t.Fatalf("expected missing password hash error, got %v", err)
 	}
-	cfg.Auth.PasswordHash = "hash"
-	if err := Validate(&cfg); err != ErrMissingClientPassword {
-		t.Fatalf("expected missing client password error, got %v", err)
-	}
 }
 
 func TestBuildWithFileAndOverrides(t *testing.T) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"log"
 	"net"
@@ -46,9 +47,22 @@ func main() {
 		"tls":    cfg.TLS.Enabled,
 	}).Info("server configuration loaded")
 
-	ln, err := net.Listen("tcp", cfg.Server.ListenAddr)
-	if err != nil {
-		log.Fatalf("listen: %v", err)
+	var ln net.Listener
+	if cfg.TLS.Enabled {
+		tlsCfg, err := config.ServerTLSConfig(cfg.TLS)
+		if err != nil {
+			log.Fatalf("tls config: %v", err)
+		}
+		ln, err = tls.Listen("tcp", cfg.Server.ListenAddr, tlsCfg)
+		if err != nil {
+			log.Fatalf("tls listen: %v", err)
+		}
+	} else {
+		var err error
+		ln, err = net.Listen("tcp", cfg.Server.ListenAddr)
+		if err != nil {
+			log.Fatalf("listen: %v", err)
+		}
 	}
 	defer ln.Close()
 

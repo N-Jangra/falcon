@@ -18,6 +18,10 @@ go run ./cmd/server --config config.example.yaml
 go run ./cmd/client --config config.example.yaml
 ```
 - When auth is enabled, ensure `client.password` is present in config or pass `--client-password` on the client.
+- Generate a self-signed cert for local TLS testing:
+```bash
+go run ./cmd/tlsgen --host "localhost,127.0.0.1" --cert tls.crt --key tls.key
+```
 
 ## Project Layout
 - `cmd/` - CLI entrypoints for server and client

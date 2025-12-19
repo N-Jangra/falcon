@@ -40,9 +40,13 @@ type AuthConfig struct {
 }
 
 type TLSConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	CertFile string `yaml:"cert_file"`
-	KeyFile  string `yaml:"key_file"`
+	Enabled            bool   `yaml:"enabled"`
+	CertFile           string `yaml:"cert_file"`
+	KeyFile            string `yaml:"key_file"`
+	CAFile             string `yaml:"ca_file"`
+	ServerName         string `yaml:"server_name"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+	CertFingerprint    string `yaml:"cert_fingerprint"` // optional SHA-256 hex for pinning
 }
 
 type LogConfig struct {
@@ -130,7 +134,6 @@ var (
 	ErrMissingFTPServerAddr    = errors.New("server.ftp_server_addr is required")
 	ErrMissingTunnelAddr       = errors.New("client.tunnel_addr is required")
 	ErrMissingLocalFTPPort     = errors.New("client.local_ftp_port must be > 0")
-	ErrMissingClientPassword   = errors.New("client.password is required when auth is enabled")
 	ErrMissingPasswordHash     = errors.New("auth.password_hash is required when auth is enabled")
 	ErrMissingTLSCert          = errors.New("tls.cert_file is required when TLS is enabled")
 	ErrMissingTLSKey           = errors.New("tls.key_file is required when TLS is enabled")
@@ -163,9 +166,6 @@ func Validate(cfg *Config) error {
 	}
 	if cfg.Auth.Enabled && cfg.Auth.PasswordHash == "" {
 		return ErrMissingPasswordHash
-	}
-	if cfg.Auth.Enabled && cfg.Client.Password == "" {
-		return ErrMissingClientPassword
 	}
 	if cfg.TLS.Enabled {
 		if cfg.TLS.CertFile == "" {
