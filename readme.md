@@ -25,7 +25,7 @@ The server accepts TCP connections (optionally over TLS), performs an auth hands
 - `internal/auth` - Authentication helpers (bcrypt scaffolding)
 - `internal/config` - Config structures, YAML loader, CLI overrides, validation
 - `internal/logger` - Structured logging with level/format and optional file output
-- `internal/tunnel` - Server and client implementations with proxy logic (TCP/TLS)
+- `internal/tunnel` - Server and client implementations with proxy logic (TCP/TLS), pooling, timeouts, reconnection
 - `pkg/protocol` - Protocol message definitions, encoding/decoding, framing
 - `docs/` - Requirements and development notes
 - `config.example.yaml` - Sample configuration
@@ -39,4 +39,4 @@ The server accepts TCP connections (optionally over TLS), performs an auth hands
 - Sprint plan: `sprints.md`
 
 ## Next Steps
-- Implement Sprint 6: connection management (timeouts, pooling, reconnection).
+- Implement Sprint 7: concurrency improvements and load testing.

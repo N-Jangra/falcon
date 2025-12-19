@@ -22,7 +22,8 @@ func TestClientEndToEndEcho(t *testing.T) {
 		t.Fatalf("ftp listen: %v", err)
 	}
 	defer ftpLn.Close()
-	go acceptAndEcho(ftpLn)
+	notify := make(chan []byte, 1)
+	go acceptAndEcho(ftpLn, notify)
 
 	// Tunnel server
 	serverLn, err := net.Listen("tcp", "127.0.0.1:0")
@@ -48,7 +49,7 @@ func TestClientEndToEndEcho(t *testing.T) {
 			PasswordHash: hash,
 		},
 		Log: config.LogConfig{
-			Level:  "error",
+			Level:  "debug",
 			Format: "text",
 		},
 	}
@@ -76,7 +77,7 @@ func TestClientEndToEndEcho(t *testing.T) {
 			Enabled: true,
 		},
 		Log: config.LogConfig{
-			Level:  "error",
+			Level:  "debug",
 			Format: "text",
 		},
 	}
@@ -97,10 +98,20 @@ func TestClientEndToEndEcho(t *testing.T) {
 		t.Fatalf("ftp client dial: %v", err)
 	}
 	defer ftpClient.Close()
+	_ = ftpClient.SetDeadline(time.Now().Add(2 * time.Second))
 
 	payload := []byte("hello through tunnel")
 	if _, err := ftpClient.Write(payload); err != nil {
 		t.Fatalf("write payload: %v", err)
+	}
+
+	select {
+	case got := <-notify:
+		if string(got) != string(payload) {
+			t.Fatalf("ftp server saw unexpected data %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("ftp server did not receive data")
 	}
 
 	buf := make([]byte, len(payload))
@@ -119,7 +130,8 @@ func TestClientEndToEndEchoTLS(t *testing.T) {
 		t.Fatalf("ftp listen: %v", err)
 	}
 	defer ftpLn.Close()
-	go acceptAndEcho(ftpLn)
+	notifyTLS := make(chan []byte, 1)
+	go acceptAndEcho(ftpLn, notifyTLS)
 
 	// TLS assets
 	cert, key, err := config.GenerateSelfSigned("127.0.0.1", time.Hour)
@@ -221,10 +233,20 @@ func TestClientEndToEndEchoTLS(t *testing.T) {
 		t.Fatalf("ftp client dial: %v", err)
 	}
 	defer ftpClient.Close()
+	_ = ftpClient.SetDeadline(time.Now().Add(2 * time.Second))
 
 	payload := []byte("hello through tls tunnel")
 	if _, err := ftpClient.Write(payload); err != nil {
 		t.Fatalf("write payload: %v", err)
+	}
+
+	select {
+	case got := <-notifyTLS:
+		if string(got) != string(payload) {
+			t.Fatalf("ftp server saw unexpected data %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("ftp server did not receive data (tls)")
 	}
 
 	buf := make([]byte, len(payload))
@@ -233,6 +255,103 @@ func TestClientEndToEndEchoTLS(t *testing.T) {
 	}
 	if string(buf) != string(payload) {
 		t.Fatalf("expected echo %q got %q", payload, buf)
+	}
+}
+
+func TestClientReconnectsAfterServerStarts(t *testing.T) {
+	// Reserve server addr but start later.
+	serverAddr := "127.0.0.1:0"
+	listener, err := net.Listen("tcp", serverAddr)
+	if err != nil {
+		t.Fatalf("listen temp: %v", err)
+	}
+	serverAddr = listener.Addr().String()
+	listener.Close()
+
+	localPort := pickFreePort(t)
+
+	clientCfg := config.Config{
+		Client: config.ClientConfig{
+			TunnelAddr:     serverAddr,
+			LocalFTPPort:   localPort,
+			Timeout:        500 * time.Millisecond,
+			Password:       "secret",
+			MaxRetries:     5,
+			BackoffInitial: 100 * time.Millisecond,
+			BackoffMax:     300 * time.Millisecond,
+		},
+		Auth: config.AuthConfig{Enabled: false},
+		Log:  config.LogConfig{Level: "error", Format: "text"},
+	}
+
+	client := NewClient(clientCfg, logrus.New(), nil)
+	clientCtx, clientCancel := context.WithCancel(context.Background())
+	defer clientCancel()
+	go func() {
+		_ = client.Start(clientCtx)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Start fake FTP server and tunnel server now.
+	ftpLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ftp listen: %v", err)
+	}
+	defer ftpLn.Close()
+	notify := make(chan []byte, 1)
+	go acceptAndEcho(ftpLn, notify)
+
+	serverLn, err := net.Listen("tcp", serverAddr)
+	if err != nil {
+		t.Fatalf("server listen late: %v", err)
+	}
+	defer serverLn.Close()
+
+	serverCfg := config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:     serverLn.Addr().String(),
+			FTPServerAddr:  ftpLn.Addr().String(),
+			MaxConnections: 5,
+			Timeout:        1 * time.Second,
+			IdleTimeout:    2 * time.Second,
+			PoolSize:       5,
+		},
+		Auth: config.AuthConfig{Enabled: false},
+		Log:  config.LogConfig{Level: "error", Format: "text"},
+	}
+	server := NewServer(serverCfg, nil, logrus.New())
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	defer serverCancel()
+	go func() {
+		_ = server.Serve(serverCtx, serverLn)
+	}()
+
+	// Allow client to retry and connect.
+	time.Sleep(300 * time.Millisecond)
+
+	ftpClient, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(localPort)))
+	if err != nil {
+		t.Fatalf("ftp client dial: %v", err)
+	}
+	defer ftpClient.Close()
+	_ = ftpClient.SetDeadline(time.Now().Add(2 * time.Second))
+
+	msg := []byte("retry-success")
+	if _, err := ftpClient.Write(msg); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	select {
+	case <-notify:
+	case <-time.After(time.Second):
+		t.Fatalf("ftp server did not receive data after reconnect")
+	}
+	buf := make([]byte, len(msg))
+	if _, err := ftpClient.Read(buf); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(buf) != string(msg) {
+		t.Fatalf("expected %q got %q", msg, buf)
 	}
 }
 

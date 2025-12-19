@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -84,25 +83,9 @@ func (c *Client) Start(ctx context.Context) error {
 func (c *Client) handleLocalConn(ctx context.Context, localConn net.Conn) error {
 	defer localConn.Close()
 
-	dialTimeout := c.cfg.Client.Timeout
-	if dialTimeout == 0 {
-		dialTimeout = 30 * time.Second
-	}
-	dialer := &net.Dialer{Timeout: dialTimeout}
-
-	var tunnelConn net.Conn
-	var err error
-	if c.tlsCfg != nil {
-		tlsDialer := tls.Dialer{
-			NetDialer: dialer,
-			Config:    c.tlsCfg,
-		}
-		tunnelConn, err = tlsDialer.DialContext(ctx, "tcp", c.cfg.Client.TunnelAddr)
-	} else {
-		tunnelConn, err = dialer.DialContext(ctx, "tcp", c.cfg.Client.TunnelAddr)
-	}
+	tunnelConn, err := c.dialWithRetry(ctx)
 	if err != nil {
-		return fmt.Errorf("dial tunnel server: %w", err)
+		return err
 	}
 	defer tunnelConn.Close()
 
@@ -117,28 +100,55 @@ func (c *Client) handleLocalConn(ctx context.Context, localConn net.Conn) error 
 		"server": c.cfg.Client.TunnelAddr,
 	}).Info("proxy connection established (client)")
 
-	return proxyWithDeadline(localConn, tunnelConn, c.cfg.Client.Timeout)
+	return proxyWithIdle(localConn, tunnelConn, c.cfg.Client.IdleTimeout)
 }
 
-func proxyWithDeadline(a, b net.Conn, timeout time.Duration) error {
-	errs := make(chan error, 2)
-	copyFunc := func(dst, src net.Conn) {
-		if timeout > 0 {
-			_ = src.SetDeadline(time.Now().Add(timeout))
-			_ = dst.SetDeadline(time.Now().Add(timeout))
-		}
-		_, err := io.Copy(dst, src)
-		_ = dst.Close()
-		errs <- err
+func (c *Client) dialWithRetry(ctx context.Context) (net.Conn, error) {
+	attempts := c.cfg.Client.MaxRetries
+	if attempts == 0 {
+		attempts = 1
 	}
-	go copyFunc(a, b)
-	go copyFunc(b, a)
+	backoff := c.cfg.Client.BackoffInitial
+	if backoff == 0 {
+		backoff = 500 * time.Millisecond
+	}
+	maxBackoff := c.cfg.Client.BackoffMax
+	if maxBackoff == 0 {
+		maxBackoff = 5 * time.Second
+	}
 
-	var firstErr error
-	for i := 0; i < 2; i++ {
-		if err := <-errs; err != nil && firstErr == nil {
-			firstErr = err
+	for i := 0; ; i++ {
+		conn, err := c.dialOnce(ctx)
+		if err == nil {
+			return conn, nil
+		}
+		if i+1 >= attempts {
+			return nil, fmt.Errorf("dial tunnel server: %w", err)
+		}
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
 		}
 	}
-	return firstErr
+}
+
+func (c *Client) dialOnce(ctx context.Context) (net.Conn, error) {
+	dialTimeout := c.cfg.Client.Timeout
+	if dialTimeout == 0 {
+		dialTimeout = 30 * time.Second
+	}
+	dialer := &net.Dialer{Timeout: dialTimeout, KeepAlive: c.cfg.Client.KeepAlive}
+	if c.tlsCfg != nil {
+		tlsDialer := tls.Dialer{
+			NetDialer: dialer,
+			Config:    c.tlsCfg,
+		}
+		return tlsDialer.DialContext(ctx, "tcp", c.cfg.Client.TunnelAddr)
+	}
+	return dialer.DialContext(ctx, "tcp", c.cfg.Client.TunnelAddr)
 }

@@ -18,7 +18,7 @@ func TestServerProxiesData(t *testing.T) {
 		t.Fatalf("ftp listen: %v", err)
 	}
 	defer ftpLn.Close()
-	go acceptAndEcho(ftpLn)
+	go acceptAndEcho(ftpLn, nil)
 
 	hash, err := auth.HashPassword("secret")
 	if err != nil {
@@ -81,7 +81,7 @@ func TestServerProxiesData(t *testing.T) {
 	cancel()
 }
 
-func acceptAndEcho(ln net.Listener) {
+func acceptAndEcho(ln net.Listener, notify chan<- []byte) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -94,6 +94,11 @@ func acceptAndEcho(ln net.Listener) {
 				n, err := c.Read(buf)
 				if err != nil {
 					return
+				}
+				if notify != nil {
+					cp := make([]byte, n)
+					copy(cp, buf[:n])
+					notify <- cp
 				}
 				_, _ = c.Write(buf[:n])
 			}

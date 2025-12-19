@@ -25,6 +25,8 @@ type Server struct {
 	nextID  uint64
 	maxConn int
 	wg      sync.WaitGroup
+
+	pool *connPool
 }
 
 // NewServer constructs a Server.
@@ -35,18 +37,21 @@ func NewServer(cfg config.Config, authenticator *auth.Authenticator, logger *log
 	if logger == nil {
 		logger = logrus.New()
 	}
+	pool := newConnPool(cfg.Server.FTPServerAddr, cfg.Server.Timeout, cfg.Server.IdleTimeout, cfg.Server.PoolSize)
 	return &Server{
 		cfg:           cfg,
 		authenticator: authenticator,
 		logger:        logger,
 		conns:         make(map[uint64]net.Conn),
 		maxConn:       cfg.Server.MaxConnections,
+		pool:          pool,
 	}
 }
 
 // Serve begins accepting connections on the provided listener until ctx is cancelled.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	defer s.shutdown()
+	defer s.pool.Close()
 
 	for {
 		conn, err := ln.Accept()
@@ -82,23 +87,26 @@ func (s *Server) handleConn(ctx context.Context, tunnelConn net.Conn) error {
 		}
 	}
 
-	ftpConn, err := net.DialTimeout("tcp", s.cfg.Server.FTPServerAddr, s.cfg.Server.Timeout)
+	s.logger.WithField("ftp", s.cfg.Server.FTPServerAddr).Debug("acquiring ftp connection")
+	acquireCtx, cancel := context.WithTimeout(context.Background(), s.cfg.Server.Timeout)
+	defer cancel()
+	ftpConn, err := s.pool.Acquire(acquireCtx)
 	if err != nil {
 		return fmt.Errorf("dial ftp server: %w", err)
 	}
-	defer ftpConn.Close()
+	s.logger.WithField("ftp", s.cfg.Server.FTPServerAddr).Debug("ftp connection acquired")
+	if ftpConn == nil {
+		return fmt.Errorf("dial ftp server: nil connection")
+	}
 
 	s.logger.WithFields(logrus.Fields{
 		"remote": tunnelConn.RemoteAddr().String(),
 		"ftp":    s.cfg.Server.FTPServerAddr,
 	}).Info("proxy connection established")
 
-	copyErr := proxy(tunnelConn, ftpConn)
-	if copyErr != nil {
-		return copyErr
-	}
-
-	return nil
+	copyErr := proxyWithIdle(tunnelConn, ftpConn, s.cfg.Server.IdleTimeout)
+	s.pool.Release(ftpConn, copyErr == nil)
+	return copyErr
 }
 
 func proxy(a, b net.Conn) error {

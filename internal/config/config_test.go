@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadValidateAndDefaults(t *testing.T) {
@@ -16,6 +17,8 @@ client:
   tunnel_addr: "server.internal:8080"
   local_ftp_port: 2021
   password: "secret"
+  idle_timeout: 5s
+  keepalive: 2s
 auth:
   enabled: true
   password_hash: "$2a$10$abcdefghijklmnopqrstuv"
@@ -40,6 +43,9 @@ log:
 	if cfg.Log.Format != "text" {
 		t.Fatalf("expected default log format")
 	}
+	if cfg.Client.IdleTimeout != 5*time.Second {
+		t.Fatalf("expected client idle timeout parsed")
+	}
 }
 
 func TestApplyOverridesHashesPassword(t *testing.T) {
@@ -50,11 +56,18 @@ func TestApplyOverridesHashesPassword(t *testing.T) {
 
 	overridePassword := "supersecret"
 	overrides := Overrides{
-		Password:       &overridePassword,
-		MaxConnections: intPtr(50),
-		AuthEnabled:    boolPtr(true),
-		FTPServerAddr:  strPtr("ftp.override:21"),
-		ClientPassword: strPtr("clientpass"),
+		Password:             &overridePassword,
+		MaxConnections:       intPtr(50),
+		AuthEnabled:          boolPtr(true),
+		FTPServerAddr:        strPtr("ftp.override:21"),
+		ClientPassword:       strPtr("clientpass"),
+		ClientIdle:           durationPtr(10 * time.Second),
+		ClientKeepAlive:      durationPtr(5 * time.Second),
+		ClientRetries:        intPtr(5),
+		ClientBackoffInitial: durationPtr(200 * time.Millisecond),
+		ClientBackoffMax:     durationPtr(3 * time.Second),
+		ServerIdle:           durationPtr(45 * time.Second),
+		PoolSize:             intPtr(10),
 	}
 
 	if err := ApplyOverrides(&cfg, overrides); err != nil {
@@ -71,6 +84,15 @@ func TestApplyOverridesHashesPassword(t *testing.T) {
 	}
 	if cfg.Client.Password != "clientpass" {
 		t.Fatalf("expected client password override applied")
+	}
+	if cfg.Client.IdleTimeout != 10*time.Second || cfg.Client.KeepAlive != 5*time.Second {
+		t.Fatalf("expected client idle/keepalive overrides applied")
+	}
+	if cfg.Client.MaxRetries != 5 || cfg.Client.BackoffInitial != 200*time.Millisecond || cfg.Client.BackoffMax != 3*time.Second {
+		t.Fatalf("expected client backoff overrides applied")
+	}
+	if cfg.Server.IdleTimeout != 45*time.Second || cfg.Server.PoolSize != 10 {
+		t.Fatalf("expected server idle timeout and pool size overrides applied")
 	}
 	if err := Validate(&cfg); err != nil {
 		t.Fatalf("validate after overrides: %v", err)
@@ -94,6 +116,10 @@ func TestValidateFailures(t *testing.T) {
 	cfg.Auth.Enabled = true
 	if err := Validate(&cfg); err != ErrMissingPasswordHash {
 		t.Fatalf("expected missing password hash error, got %v", err)
+	}
+	cfg.Auth.PasswordHash = "hash"
+	if err := Validate(&cfg); err != ErrMissingClientPassword {
+		t.Fatalf("expected missing client password error, got %v", err)
 	}
 }
 
@@ -164,6 +190,7 @@ func TestCLIFlagOverrides(t *testing.T) {
 	}
 }
 
-func intPtr(v int) *int       { return &v }
-func boolPtr(v bool) *bool    { return &v }
-func strPtr(v string) *string { return &v }
+func intPtr(v int) *int                          { return &v }
+func boolPtr(v bool) *bool                       { return &v }
+func strPtr(v string) *string                    { return &v }
+func durationPtr(d time.Duration) *time.Duration { return &d }

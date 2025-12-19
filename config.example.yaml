@@ -3,11 +3,18 @@ server:
   ftp_server_addr: "ftp.internal:21"
   max_connections: 100
   timeout: 30s
+  idle_timeout: 60s
+  pool_size: 50
 
 client:
   tunnel_addr: "tunnel.internal:8080"
   local_ftp_port: 2121
   timeout: 30s
+  idle_timeout: 60s
+  keepalive: 30s
+  max_retries: 3
+  backoff_initial: 500ms
+  backoff_max: 5s
   password: "changeme" # plaintext password the client sends when auth is enabled
 
 auth:

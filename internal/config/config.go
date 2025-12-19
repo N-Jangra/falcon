@@ -25,13 +25,20 @@ type ServerConfig struct {
 	FTPServerAddr  string        `yaml:"ftp_server_addr"`
 	MaxConnections int           `yaml:"max_connections"`
 	Timeout        time.Duration `yaml:"timeout"`
+	IdleTimeout    time.Duration `yaml:"idle_timeout"`
+	PoolSize       int           `yaml:"pool_size"`
 }
 
 type ClientConfig struct {
-	TunnelAddr   string        `yaml:"tunnel_addr"`
-	LocalFTPPort int           `yaml:"local_ftp_port"`
-	Timeout      time.Duration `yaml:"timeout"`
-	Password     string        `yaml:"password"` // plaintext password to send when auth is enabled
+	TunnelAddr     string        `yaml:"tunnel_addr"`
+	LocalFTPPort   int           `yaml:"local_ftp_port"`
+	Timeout        time.Duration `yaml:"timeout"`
+	Password       string        `yaml:"password"` // plaintext password to send when auth is enabled
+	IdleTimeout    time.Duration `yaml:"idle_timeout"`
+	KeepAlive      time.Duration `yaml:"keepalive"`
+	MaxRetries     int           `yaml:"max_retries"`
+	BackoffInitial time.Duration `yaml:"backoff_initial"`
+	BackoffMax     time.Duration `yaml:"backoff_max"`
 }
 
 type AuthConfig struct {
@@ -80,10 +87,17 @@ func Default() Config {
 			ListenAddr:     ":8080",
 			MaxConnections: 100,
 			Timeout:        30 * time.Second,
+			IdleTimeout:    60 * time.Second,
+			PoolSize:       50,
 		},
 		Client: ClientConfig{
-			LocalFTPPort: 2121,
-			Timeout:      30 * time.Second,
+			LocalFTPPort:   2121,
+			Timeout:        30 * time.Second,
+			IdleTimeout:    60 * time.Second,
+			KeepAlive:      30 * time.Second,
+			MaxRetries:     3,
+			BackoffInitial: 500 * time.Millisecond,
+			BackoffMax:     5 * time.Second,
 		},
 		Auth: AuthConfig{
 			Enabled:      false,
@@ -112,12 +126,33 @@ func ApplyDefaults(cfg *Config) {
 	if cfg.Server.Timeout == 0 {
 		cfg.Server.Timeout = defaults.Server.Timeout
 	}
+	if cfg.Server.IdleTimeout == 0 {
+		cfg.Server.IdleTimeout = defaults.Server.IdleTimeout
+	}
+	if cfg.Server.PoolSize == 0 {
+		cfg.Server.PoolSize = defaults.Server.PoolSize
+	}
 
 	if cfg.Client.LocalFTPPort == 0 {
 		cfg.Client.LocalFTPPort = defaults.Client.LocalFTPPort
 	}
 	if cfg.Client.Timeout == 0 {
 		cfg.Client.Timeout = defaults.Client.Timeout
+	}
+	if cfg.Client.IdleTimeout == 0 {
+		cfg.Client.IdleTimeout = defaults.Client.IdleTimeout
+	}
+	if cfg.Client.KeepAlive == 0 {
+		cfg.Client.KeepAlive = defaults.Client.KeepAlive
+	}
+	if cfg.Client.MaxRetries == 0 {
+		cfg.Client.MaxRetries = defaults.Client.MaxRetries
+	}
+	if cfg.Client.BackoffInitial == 0 {
+		cfg.Client.BackoffInitial = defaults.Client.BackoffInitial
+	}
+	if cfg.Client.BackoffMax == 0 {
+		cfg.Client.BackoffMax = defaults.Client.BackoffMax
 	}
 
 	if cfg.Log.Level == "" {
@@ -134,11 +169,15 @@ var (
 	ErrMissingFTPServerAddr    = errors.New("server.ftp_server_addr is required")
 	ErrMissingTunnelAddr       = errors.New("client.tunnel_addr is required")
 	ErrMissingLocalFTPPort     = errors.New("client.local_ftp_port must be > 0")
+	ErrMissingClientPassword   = errors.New("client.password is required when auth is enabled")
 	ErrMissingPasswordHash     = errors.New("auth.password_hash is required when auth is enabled")
 	ErrMissingTLSCert          = errors.New("tls.cert_file is required when TLS is enabled")
 	ErrMissingTLSKey           = errors.New("tls.key_file is required when TLS is enabled")
 	ErrInvalidMaxConnections   = errors.New("server.max_connections must be > 0")
 	ErrInvalidTimeout          = errors.New("timeout must be > 0")
+	ErrInvalidIdleTimeout      = errors.New("idle timeout must be > 0")
+	ErrInvalidPoolSize         = errors.New("pool size must be > 0")
+	ErrInvalidRetries          = errors.New("max retries must be >= 0")
 )
 
 // Validate checks required and minimal values.
@@ -155,6 +194,12 @@ func Validate(cfg *Config) error {
 	if cfg.Server.Timeout <= 0 {
 		return ErrInvalidTimeout
 	}
+	if cfg.Server.IdleTimeout <= 0 {
+		return ErrInvalidIdleTimeout
+	}
+	if cfg.Server.PoolSize <= 0 {
+		return ErrInvalidPoolSize
+	}
 	if cfg.Client.TunnelAddr == "" {
 		return ErrMissingTunnelAddr
 	}
@@ -164,8 +209,20 @@ func Validate(cfg *Config) error {
 	if cfg.Client.Timeout <= 0 {
 		return ErrInvalidTimeout
 	}
+	if cfg.Client.IdleTimeout <= 0 {
+		return ErrInvalidIdleTimeout
+	}
+	if cfg.Client.KeepAlive < 0 {
+		return fmt.Errorf("keepalive must be >= 0")
+	}
+	if cfg.Client.MaxRetries < 0 {
+		return ErrInvalidRetries
+	}
 	if cfg.Auth.Enabled && cfg.Auth.PasswordHash == "" {
 		return ErrMissingPasswordHash
+	}
+	if cfg.Auth.Enabled && cfg.Client.Password == "" {
+		return ErrMissingClientPassword
 	}
 	if cfg.TLS.Enabled {
 		if cfg.TLS.CertFile == "" {
@@ -180,24 +237,31 @@ func Validate(cfg *Config) error {
 
 // Overrides hold optional CLI-provided overrides.
 type Overrides struct {
-	ConfigPath     *string
-	ListenAddr     *string
-	FTPServerAddr  *string
-	MaxConnections *int
-	ServerTimeout  *time.Duration
-	TunnelAddr     *string
-	LocalFTPPort   *int
-	ClientTimeout  *time.Duration
-	ClientPassword *string
-	AuthEnabled    *bool
-	Password       *string
-	PasswordHash   *string
-	TLSEnabled     *bool
-	TLSCertFile    *string
-	TLSKeyFile     *string
-	LogLevel       *string
-	LogFilePath    *string
-	LogFormat      *string
+	ConfigPath           *string
+	ListenAddr           *string
+	FTPServerAddr        *string
+	MaxConnections       *int
+	ServerTimeout        *time.Duration
+	ServerIdle           *time.Duration
+	PoolSize             *int
+	TunnelAddr           *string
+	LocalFTPPort         *int
+	ClientTimeout        *time.Duration
+	ClientPassword       *string
+	ClientIdle           *time.Duration
+	ClientKeepAlive      *time.Duration
+	ClientRetries        *int
+	ClientBackoffInitial *time.Duration
+	ClientBackoffMax     *time.Duration
+	AuthEnabled          *bool
+	Password             *string
+	PasswordHash         *string
+	TLSEnabled           *bool
+	TLSCertFile          *string
+	TLSKeyFile           *string
+	LogLevel             *string
+	LogFilePath          *string
+	LogFormat            *string
 }
 
 // ApplyOverrides mutates cfg using non-nil override values.
@@ -214,6 +278,12 @@ func ApplyOverrides(cfg *Config, o Overrides) error {
 	if o.ServerTimeout != nil {
 		cfg.Server.Timeout = *o.ServerTimeout
 	}
+	if o.ServerIdle != nil {
+		cfg.Server.IdleTimeout = *o.ServerIdle
+	}
+	if o.PoolSize != nil {
+		cfg.Server.PoolSize = *o.PoolSize
+	}
 	if o.TunnelAddr != nil {
 		cfg.Client.TunnelAddr = *o.TunnelAddr
 	}
@@ -225,6 +295,21 @@ func ApplyOverrides(cfg *Config, o Overrides) error {
 	}
 	if o.ClientPassword != nil {
 		cfg.Client.Password = *o.ClientPassword
+	}
+	if o.ClientIdle != nil {
+		cfg.Client.IdleTimeout = *o.ClientIdle
+	}
+	if o.ClientKeepAlive != nil {
+		cfg.Client.KeepAlive = *o.ClientKeepAlive
+	}
+	if o.ClientRetries != nil {
+		cfg.Client.MaxRetries = *o.ClientRetries
+	}
+	if o.ClientBackoffInitial != nil {
+		cfg.Client.BackoffInitial = *o.ClientBackoffInitial
+	}
+	if o.ClientBackoffMax != nil {
+		cfg.Client.BackoffMax = *o.ClientBackoffMax
 	}
 	if o.AuthEnabled != nil {
 		cfg.Auth.Enabled = *o.AuthEnabled
@@ -338,11 +423,18 @@ type CLIFlags struct {
 	FTPServerAddr  stringFlag
 	MaxConnections intFlag
 	ServerTimeout  durationFlag
+	ServerIdle     durationFlag
+	PoolSize       intFlag
 
-	TunnelAddr     stringFlag
-	LocalFTPPort   intFlag
-	ClientTimeout  durationFlag
-	ClientPassword stringFlag
+	TunnelAddr           stringFlag
+	LocalFTPPort         intFlag
+	ClientTimeout        durationFlag
+	ClientPassword       stringFlag
+	ClientIdle           durationFlag
+	ClientKeepAlive      durationFlag
+	ClientRetries        intFlag
+	ClientBackoffInitial durationFlag
+	ClientBackoffMax     durationFlag
 
 	AuthEnabled  boolFlag
 	Password     stringFlag
@@ -367,11 +459,18 @@ func RegisterFlags(fs *flag.FlagSet) *CLIFlags {
 	fs.Var(&flags.FTPServerAddr, "ftp", "Target FTP server address (host:port)")
 	fs.Var(&flags.MaxConnections, "max-conns", "Maximum concurrent connections")
 	fs.Var(&flags.ServerTimeout, "server-timeout", "Server timeout (e.g. 30s)")
+	fs.Var(&flags.ServerIdle, "server-idle-timeout", "Idle timeout for server-side connections (e.g. 60s)")
+	fs.Var(&flags.PoolSize, "ftp-pool-size", "FTP connection pool size")
 
 	fs.Var(&flags.TunnelAddr, "server", "Tunnel server address (host:port)")
 	fs.Var(&flags.LocalFTPPort, "local-port", "Local FTP port to listen on")
 	fs.Var(&flags.ClientTimeout, "client-timeout", "Client timeout (e.g. 30s)")
 	fs.Var(&flags.ClientPassword, "client-password", "Plaintext password for client authentication")
+	fs.Var(&flags.ClientIdle, "client-idle-timeout", "Idle timeout for client-side connections (e.g. 60s)")
+	fs.Var(&flags.ClientKeepAlive, "client-keepalive", "TCP keepalive interval (0 to disable)")
+	fs.Var(&flags.ClientRetries, "client-retries", "Max retries for connecting to tunnel server")
+	fs.Var(&flags.ClientBackoffInitial, "client-backoff-initial", "Initial backoff for reconnect (e.g. 500ms)")
+	fs.Var(&flags.ClientBackoffMax, "client-backoff-max", "Max backoff for reconnect (e.g. 5s)")
 
 	fs.Var(&flags.AuthEnabled, "auth", "Enable authentication (true/false)")
 	fs.Var(&flags.Password, "password", "Plaintext password (hashed internally)")
@@ -407,6 +506,12 @@ func OverridesFromFlags(f *CLIFlags) Overrides {
 	if f.ServerTimeout.set {
 		ov.ServerTimeout = &f.ServerTimeout.value
 	}
+	if f.ServerIdle.set {
+		ov.ServerIdle = &f.ServerIdle.value
+	}
+	if f.PoolSize.set {
+		ov.PoolSize = &f.PoolSize.value
+	}
 	if f.TunnelAddr.set {
 		ov.TunnelAddr = &f.TunnelAddr.value
 	}
@@ -418,6 +523,21 @@ func OverridesFromFlags(f *CLIFlags) Overrides {
 	}
 	if f.ClientPassword.set {
 		ov.ClientPassword = &f.ClientPassword.value
+	}
+	if f.ClientIdle.set {
+		ov.ClientIdle = &f.ClientIdle.value
+	}
+	if f.ClientKeepAlive.set {
+		ov.ClientKeepAlive = &f.ClientKeepAlive.value
+	}
+	if f.ClientRetries.set {
+		ov.ClientRetries = &f.ClientRetries.value
+	}
+	if f.ClientBackoffInitial.set {
+		ov.ClientBackoffInitial = &f.ClientBackoffInitial.value
+	}
+	if f.ClientBackoffMax.set {
+		ov.ClientBackoffMax = &f.ClientBackoffMax.value
 	}
 	if f.AuthEnabled.set {
 		ov.AuthEnabled = &f.AuthEnabled.value

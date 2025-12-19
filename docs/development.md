@@ -22,6 +22,9 @@ go run ./cmd/client --config config.example.yaml
 ```bash
 go run ./cmd/tlsgen --host "localhost,127.0.0.1" --cert tls.crt --key tls.key
 ```
+- Connection tuning knobs:
+  - Server: `idle_timeout`, `pool_size`, `max_connections`
+  - Client: `idle_timeout`, `keepalive`, `max_retries`, `backoff_initial`, `backoff_max`
 
 ## Project Layout
 - `cmd/` - CLI entrypoints for server and client
